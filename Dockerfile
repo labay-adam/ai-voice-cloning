@@ -1,11 +1,18 @@
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.1-cudnn-devel-ubuntu24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TZ=UTC
-ARG MINICONDA_VERSION=23.1.0-1
-ARG PYTHON_VERSION=3.11
-ARG UID=1000
-ARG GID=1000
+ARG PYTHON_VERSION=3.11.10
+ARG UID=1001
+ARG GID=1001
+
+# Repositories
+ARG BASE_REPO=https://github.com/JarodMica/ai-voice-cloning
+ARG RVC_REPO=https://huggingface.co/Jmica/rvc/resolve/main/rvc_lightweight.zip?download=true
+ARG FAIRSEQ_REPO=https://github.com/VarunGumma/fairseq
+ARG PYFASTMP3DECODER_REPO=https://github.com/neonbjb/pyfastmp3decoder.git
+ARG PIPELINE_REPO=https://github.com/JarodMica/rvc-tts-pipeline.git@lightweight#egg=rvc_tts_pipe
+ARG WHISPERX_REPO=https://github.com/m-bain/whisperx.git
 
 # TZ
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -19,8 +26,24 @@ RUN apt-get install -y \
     ffmpeg \
     p7zip-full \
     gcc \
-    g++ \
-    vim
+    g++
+    
+# Python Prereqs
+RUN apt-get install -y \
+	libssl-dev \
+	liblzma-dev \
+	libsqlite3-dev \
+	libctypes-ocaml-dev \
+	libffi-dev \
+	libncurses-dev \
+	libbz2-dev \
+	libreadline-dev \
+	tk-dev \
+	make \
+	build-essential \
+	zlib1g-dev \
+	llvm \
+	xz-utils
 
 # User
 RUN groupadd --gid $GID user
@@ -31,66 +54,46 @@ WORKDIR $HOME
 RUN mkdir $HOME/.cache $HOME/.config && chmod -R 777 $HOME
 
 # Python
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-py39_$MINICONDA_VERSION-Linux-x86_64.sh
-RUN chmod +x Miniconda3-py39_$MINICONDA_VERSION-Linux-x86_64.sh
-RUN ./Miniconda3-py39_$MINICONDA_VERSION-Linux-x86_64.sh -b -p /home/user/miniconda
-ENV PATH="$HOME/miniconda/bin:$PATH"
-RUN conda init
-RUN conda install python=$PYTHON_VERSION
+RUN curl https://pyenv.run/ | bash
+ENV PYENV=$HOME/.pyenv/bin
+RUN $PYENV/pyenv install $PYTHON_VERSION && \
+	$PYENV/pyenv virtualenv $PYTHON_VERSION venv
+ENV PYTHON3_BIN=$HOME/.pyenv/versions/venv/bin/python3
+USER root
+RUN ln -sf $PYTHON3_BIN /usr/bin/python3
+USER user
+
 RUN python3 -m pip install --upgrade pip
-RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+RUN python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # Base path
-RUN mkdir $HOME/ai-voice-cloning
+RUN git clone $BASE_REPO
 WORKDIR $HOME/ai-voice-cloning
 
 # Built in modules
-COPY --chown=user:user modules modules
+RUN git submodule init &&\
+	git submodule update --remote
 RUN python3 -m pip install -r ./modules/tortoise-tts/requirements.txt
 RUN python3 -m pip install -e ./modules/tortoise-tts/
 RUN python3 -m pip install -r ./modules/dlas/requirements.txt
 RUN python3 -m pip install -e ./modules/dlas/
 
-# RVC
-RUN \
-    curl -L -o /tmp/rvc.zip https://huggingface.co/Jmica/rvc/resolve/main/rvc_lightweight.zip?download=true &&\
-    7z x /tmp/rvc.zip &&\
-    rm -f /tmp/rvc.zip
-USER root
-RUN \
-    chown user:user rvc -R &&\
-    chmod -R u+rwX,go+rX,go-w rvc
-USER user
+# Stage other modules
+RUN curl -L $RVC_REPO -o rvc.zip && \
+	python3 -m zipfile -e rvc.zip ./
+RUN git clone $FAIRSEQ_REPO && \
+	python3 -m pip wheel ./fairseq -w ./fairseq/wheels
+RUN git clone --recurse-submodules $PYFASTMP3DECODER_REPO && \
+	python3 -m pip wheel ./pyfastmp3decoder -w ./pyfastmp3decoder/wheels
+
+# Install dependencies
 RUN python3 -m pip install -r ./rvc/requirements.txt
-
-# Fairseq
-# Using patched version for Python 3.11 due to https://github.com/facebookresearch/fairseq/issues/5012
-RUN python3 -m pip install git+https://github.com/liyaodev/fairseq
-
-# RVC Pipeline
-RUN python3 -m pip install git+https://github.com/JarodMica/rvc-tts-pipeline.git@lightweight#egg=rvc_tts_pipe
-
-# Deepspeed
+RUN python3 -m pip install ./fairseq/wheels/fairseq-*.whl
+RUN python3 -m pip install git+$PIPELINE_REPO
 RUN python3 -m pip install deepspeed
-
-# PyFastMP3Decoder
-RUN python3 -m pip install cython
-RUN git clone https://github.com/neonbjb/pyfastmp3decoder.git
-RUN \
-    cd pyfastmp3decoder &&\
-    git submodule update --init --recursive &&\
-    python setup.py install &&\
-    cd ..
-
-# WhisperX
-RUN python3 -m pip install git+https://github.com/m-bain/whisperx.git
-
-# Main requirements
-ADD requirements.txt requirements.txt
-RUN python3 -m pip install -r ./requirements.txt
-
-# The app
-ADD --chown=user:user . $HOME/ai-voice-cloning
+RUN python3 -m pip install ./pyfastmp3decoder/wheels/pyfastmp3decoder-*.whl
+RUN python3 -m pip install git+$WHISPERX_REPO
+RUN python3 -m pip install -r requirements.txt
 
 ENV IN_DOCKER=true
 
