@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.6.1-cudnn-devel-ubuntu24.04
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TZ=UTC
@@ -56,13 +56,13 @@ RUN mkdir $HOME/.cache $HOME/.config && chmod -R 777 $HOME
 # Python
 RUN curl https://pyenv.run/ | bash
 ENV PYENV=$HOME/.pyenv/bin
-RUN $PYENV/pyenv install $PYTHON_VERSION && \
-	$PYENV/pyenv virtualenv $PYTHON_VERSION venv
-ENV PYTHON3_BIN=$HOME/.pyenv/versions/venv/bin/python3
+RUN $PYENV/pyenv install $PYTHON_VERSION
+ENV PYTHON3_BIN=$HOME/.pyenv/versions/$PYTHON_VERSION/bin/python3
 USER root
 RUN ln -sf $PYTHON3_BIN /usr/bin/python3
 USER user
 
+# Prereqs
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
@@ -96,5 +96,7 @@ RUN python3 -m pip install git+$WHISPERX_REPO
 RUN python3 -m pip install -r requirements.txt
 
 ENV IN_DOCKER=true
+ENV PYTHON_VERSION=$PYTHON_VERSION
+ENV GRADIO_SERVER_NAME=0.0.0.0
 
 CMD ["./start.sh"]
