@@ -7,7 +7,7 @@ ARG UID=1001
 ARG GID=1001
 
 # Repositories
-ARG BASE_REPO=https://github.com/JarodMica/ai-voice-cloning
+ARG BASE_REPO=https://github.com/labay-adam/ai-voice-cloning
 ARG RVC_REPO=https://huggingface.co/Jmica/rvc/resolve/main/rvc_lightweight.zip?download=true
 ARG FAIRSEQ_REPO=https://github.com/VarunGumma/fairseq
 ARG PYFASTMP3DECODER_REPO=https://github.com/neonbjb/pyfastmp3decoder.git
@@ -26,7 +26,8 @@ RUN apt-get install -y \
     ffmpeg \
     p7zip-full \
     gcc \
-    g++
+    g++ \
+    nano
     
 # Python Prereqs
 RUN apt-get install -y \
